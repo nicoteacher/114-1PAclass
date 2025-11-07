@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>掃描圖片→播放影片 Demo (OpenCV.js)</title>
+  <title>掃描圖片→播放影片 (OpenCV.js 多目標版)</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans TC, Arial, sans-serif; margin: 0; background:#0b0f14; color:#e6edf3; }
     header { padding: 16px 20px; background: #111827; position: sticky; top:0; z-index: 10; }
@@ -12,7 +12,14 @@
     .card { background: #111827; border: 1px solid #1f2937; border-radius: 14px; padding: 16px; }
     .row { display: grid; grid-template-columns: 1fr; gap: 16px; }
     @media (min-width: 900px){ .row { grid-template-columns: 1.2fr 1fr; } }
-    video#cam { width: 100%; max-height: 60vh; background: #000; border-radius: 12px; }
+    /* 修正：讓攝影機畫面鏡像翻轉，更符合直覺 */
+    video#cam { 
+      width: 100%; 
+      max-height: 60vh; 
+      background: #000; 
+      border-radius: 12px; 
+      transform: scaleX(-1); 
+    }
     canvas { display:none; }
     .status { font-size: 14px; opacity: 0.8; }
     .pill { display:inline-flex; align-items:center; gap:8px; border:1px solid #374151; background:#0b1220; padding:8px 12px; border-radius:999px; }
@@ -30,7 +37,7 @@
 </head>
 <body>
   <header>
-    <h1>掃描指定圖片 → 自動顯示影片（Web 版，免 App）</h1>
+    <h1>掃描指定圖片 → 自動顯示影片（多目標版）</h1>
   </header>
   <main>
     <section class="card row">
@@ -46,7 +53,7 @@
           <span class="pill warn">🔎 正在等待相機啟動…</span>
         </p>
         <div class="help">
-          <p>把相機對準「目標圖片」（多目標（見下方清單））。當系統判定相符，即會顯示下方影片。</p>
+          <p>把相機對準「目標圖片」（見下方清單）。當系統判定相符，即會顯示下方影片。</p>
           <details>
             <summary>或改用上傳照片比對</summary>
             <input type="file" id="upload" accept="image/*" />
@@ -67,13 +74,7 @@
             <ul id="targetsList"></ul>
           </details>
         </div>
-        <div class="help">
-          <strong>如何換成自己的內容？</strong>
-          <ol>
-            <li>把你的「目標圖片」命名為 <code>target.jpg</code>，與本檔案放在同一資料夾。</li>
-            <li>把 <code>VIDEO_URL</code> 改成你的 YouTube/Vimeo/自架 MP4 播放頁。</li>
-          </ol>
-        </div>
+        <!-- 移除了舊版 "如何換成自己的內容？" 的說明，因為已在此處實現多目標 -->
       </div>
     </section>
 
@@ -85,15 +86,18 @@
 
   <!-- OpenCV.js CDN（需可連網）-->
   <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
+  
+  <!-- 這是唯一且正確的 Script 區塊 -->
   <script>
     // === 多目標設定（請改這裡）===
-    // 每個目標一筆：image 為檔名（與本檔同資料夾），label 為顯示名稱，url 為對應影片頁，threshold 可依圖像複雜度調整（建議 14~28）。
+    // image 為檔名（需與 index.html 一起上傳到 GitHub）
+    // url 必須是 "embed" 格式的影片網址
     const TARGETS = [
-      { id:'t1', image:'70299.jpg', label:'目標 A', url:'https://youtu.be/kJrUlfrioGk', threshold:18 },
-      { id:'t2', image:'70202.jpg', label:'目標 B', url:'https://youtu.be/VhvUABwtinE', threshold:18 }
-      { id:'t3', image:'70204.jpg', label:'目標 B', url:'https://youtu.be/1AorgPxuoAQ', threshold:18 }
-      { id:'t4', image:'70211.jpg', label:'目標 B', url:'https://youtu.be/-U_GWXq5zks', threshold:18 }
-      // 可繼續新增：{ id:'t3', image:'poster_C.jpg', label:'目標 C', url:'https://你的影片頁', threshold:20 }
+      { id:'t1', image:'70299.jpg', label:'目標 A', url:'https://www.youtube.com/embed/kJrUlfrioGk?autoplay=1&mute=1&playsinline=1', threshold:18 },
+      { id:'t2', image:'70202.jpg', label:'目標 B', url:'https://www.youtube.com/embed/VhvUABwtinE?autoplay=1&mute=1&playsinline=1', threshold:18 },
+      { id:'t3', image:'70204.jpg', label:'目標 C', url:'https://www.youtube.com/embed/1AorgPxuoAQ?autoplay=1&mute=1&playsinline=1', threshold:18 }, // <-- 修正：加上了逗號
+      { id:'t4', image:'70211.jpg', label:'目標 D', url:'https://www.youtube.com/embed/-U_GWXq5zks?autoplay=1&mute=1&playsinline=1', threshold:18 }
+      // 可繼續新增：{ id:'t5', image:'poster_E.jpg', label:'目標 E', url:'https:...', threshold:20 }
     ];
 
     // 內部狀態
@@ -121,23 +125,61 @@
     }
 
     async function startCam(){
-      if(!cvReady){ setStatus('<span class="pill warn">📦 影像模組尚未就緒或目標尚未載入…</span>'); return; }
+      // 修正：檢查 loadedTargets.length 是否 > 0
+      if(!cvReady || loadedTargets.length === 0){ 
+        setStatus('<span class="pill warn">📦 影像模組尚未就緒或目標尚未載入…</span>'); 
+        // 增加提示，檢查 Console
+        if (!cvReady) console.warn('OpenCV.js 尚未就緒');
+        if (loadedTargets.length === 0) console.warn('沒有成功載入任何目標圖片');
+        return; 
+      }
       try{
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio:false });
         cam.srcObject = stream; await cam.play();
-        frame.width = Math.floor(cam.videoWidth/2); frame.height = Math.floor(cam.videoHeight/2);
+        
+        // 降低解析度以提升效能
+        const videoTrack = stream.getVideoTracks()[0];
+        const settings = videoTrack.getSettings();
+        const w = settings.width || 640;
+        const h = settings.height || 480;
+
+        frame.width = Math.floor(w/2); 
+        frame.height = Math.floor(h/2);
+
         running = true; startBtn.disabled = true; stopBtn.disabled = false;
         setStatus('<span class="pill">📸 相機啟動中…請對準任一目標圖片</span>');
         loop();
       }catch(err){
         console.error(err);
-        setStatus('<span class="pill err">🚫 無法啟動相機：'+ err.message +'</span>');
+        let msg = err.message;
+        if(err.name === 'NotAllowedError') {
+          msg = '您拒絕了相機權限。';
+        } else if (err.name === 'NotFoundError') {
+          msg = '找不到相機設備。';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          msg = '相機可能正被其他程式使用中。';
+        } else if (err.name === 'SecurityError') {
+          msg = '相機權限僅限於 HTTPS 安全連線。';
+        }
+        setStatus(`<span class="pill err">🚫 無法啟動相機：${msg}</span>`);
       }
     }
 
     function computeGoodMatches(descScene, descTarget){
       const matchesVec = new cv.DMatchVectorVector();
-      matcher.knnMatch(descScene, descTarget, matchesVec, 2);
+      try {
+        // 修正：檢查 desc 是否為空
+        if (descScene.empty() || descTarget.empty()) {
+            matchesVec.delete();
+            return 0;
+        }
+        matcher.knnMatch(descScene, descTarget, matchesVec, 2);
+      } catch(e) {
+        console.warn("knnMatch error", e);
+        matchesVec.delete();
+        return 0; // 比對失敗
+      }
+      
       let good = 0;
       for(let i=0;i<matchesVec.size();i++){
         const m = matchesVec.get(i);
@@ -154,7 +196,11 @@
     function extractDesc(srcMat){
       const gray = new cv.Mat(); cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
       const kps = new cv.KeyPointVector(); const des = new cv.Mat();
-      detector.detectAndCompute(gray, new cv.Mat(), kps, des);
+      try {
+        detector.detectAndCompute(gray, new cv.Mat(), kps, des);
+      } catch(e) {
+        console.error("detectAndCompute error:", e);
+      }
       gray.delete(); kps.delete();
       return des; // caller must delete
     }
@@ -162,7 +208,12 @@
     function loop(){
       if(!running) return;
       const ctx = frame.getContext('2d');
-      ctx.drawImage(cam, 0, 0, frame.width, frame.height);
+      // 繪製影像到 canvas (鏡像翻轉，以匹配攝影機畫面)
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.drawImage(cam, -frame.width, 0, frame.width, frame.height);
+      ctx.restore();
+      
       const scene = cv.imread(frame);
       const sceneDesc = extractDesc(scene);
       scene.delete();
@@ -187,9 +238,11 @@
             setStatus('<span class="pill ok">✅ 維持命中：'+best.label+'（匹配：'+best.score+'）</span>');
           }
         } else {
+          currentHitId = null; // 匹配數不足，重置
           setStatus('<span class="pill">🔍 比對中…最佳：'+best.label+'（良好匹配：'+best.score+' / 門檻 '+best.threshold+'）</span>');
         }
       } else {
+        currentHitId = null; // 無匹配
         setStatus('<span class="pill">🔍 比對中…尚無結果</span>');
       }
 
@@ -199,30 +252,55 @@
     function renderTargetsList(){
       if(!targetsList) return;
       targetsList.innerHTML = '';
+      if(loadedTargets.length === 0) {
+        targetsList.innerHTML = '<li>尚未載入任何目標。</li>';
+        return;
+      }
       for(const t of loadedTargets){
         const li = document.createElement('li');
-        li.innerHTML = `<code>${t.label}</code> → <code>${t.url}</code>（門檻 ${t.threshold}）`;
+        // 修正：顯示 label
+        li.innerHTML = `<code>${t.label}</code> → <code>...${t.url.split('?')[0].slice(-20)}</code>（門檻 ${t.threshold}）`;
         targetsList.appendChild(li);
       }
     }
 
     function onOpenCvReady(){
       cv['onRuntimeInitialized'] = async () => {
-        detector = new cv.ORB();
-        matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+        try {
+          detector = new cv.ORB();
+          matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+        } catch(e) {
+          console.error("OpenCV init error", e);
+          setStatus('<span class="pill err">⚠️ OpenCV 模組初始化失敗。</span>');
+          return;
+        }
 
         // 載入所有目標並計算特徵
         const loads = TARGETS.map(cfg => new Promise((resolve, reject) => {
-          const img = new Image(); img.src = cfg.image;
+          const img = new Image();
+          // img.crossOrigin = "Anonymous"; // 註：在 GitHub Pages 上因為同源，通常不需要
+          img.src = cfg.image;
+          
           img.onload = () => {
             const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
             c.getContext('2d').drawImage(img,0,0);
             const mat = cv.imread(c);
-            const desc = extractDesc(mat); mat.delete();
-            loadedTargets.push({ id:cfg.id, label:cfg.label, url:cfg.url, threshold:cfg.threshold ?? 18, desc });
-            resolve();
+            const desc = extractDesc(mat); 
+            mat.delete();
+            
+            if(desc.empty()) {
+              console.warn(`'${cfg.label}' (${cfg.image}) 無法提取特徵。圖片是否太模糊或太簡單？`);
+              reject(new Error(`無法提取 ${cfg.label} 的特徵`));
+            } else {
+              loadedTargets.push({ id:cfg.id, label:cfg.label, url:cfg.url, threshold:cfg.threshold ?? 18, desc });
+              resolve();
+            }
           };
-          img.onerror = () => reject(new Error('找不到 '+cfg.image));
+          img.onerror = () => {
+            // 這是最常見的錯誤！
+            console.error(`找不到圖片：'${cfg.image}'。請檢查 GitHub 上的檔名大小寫是否完全一致。`);
+            reject(new Error(`找不到 ${cfg.image}`));
+          };
         }));
 
         try{
@@ -232,7 +310,8 @@
           setStatus('<span class="pill ok">🧩 已載入 '+loadedTargets.length+' 個目標特徵，隨時可「啟動相機」。</span>');
         }catch(e){
           console.error(e);
-          setStatus('<span class="pill err">⚠️ 有目標圖片載入失敗：'+e.message+'</span>');
+          setStatus(`<span class="pill err">⚠️ 有目標圖片載入失敗：${e.message}。請檢查檔名。</span>`);
+          renderTargetsList(); // 顯示部分載入的
         }
       };
     }
@@ -245,20 +324,30 @@
     const uploadEl = document.getElementById('upload');
     if(uploadEl){
       uploadEl.addEventListener('change', async (e)=>{
+        if(!cvReady || loadedTargets.length === 0){
+           setStatus('<span class="pill warn">📦 目標尚未載入，請稍候。</span>');
+           e.target.value = null; // 重設
+           return;
+        }
         const file = e.target.files[0]; if(!file) return;
-        const img = new Image(); img.src = URL.createObjectURL(file); await img.decode();
+        const img = new Image(); img.src = URL.createObjectURL(file); 
+        await img.decode();
+        
         const c = document.createElement('canvas');
         const MAXW = 720; const scale = Math.min(1, MAXW / img.width);
         c.width = img.width * scale; c.height = img.height * scale;
         c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        
         const mat = cv.imread(c);
         const sceneDesc = extractDesc(mat); mat.delete();
+        
         let best = {id:null, label:'', url:'', threshold:999, score:-1};
         for(const t of loadedTargets){
           const good = computeGoodMatches(sceneDesc, t.desc);
           if(good > best.score){ best = {id:t.id, label:t.label, url:t.url, threshold:t.threshold, score:good}; }
         }
         sceneDesc.delete();
+        
         if(best.id && best.score >= best.threshold){
           currentHitId = best.id; yt.src = best.url;
           currentLabelEl.textContent = `${best.label}（匹配：${best.score}）`;
@@ -269,152 +358,16 @@
         } else {
           setStatus('<span class="pill">🔍 上傳圖片比對無結果</span>');
         }
+        e.target.value = null; // 重設
       });
     }
 
     document.addEventListener('visibilitychange', ()=>{ if(document.hidden) safeStop(); });
   </script>
-  <script>
-    // === 可自訂 ===
-    const VIDEO_URL = "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=1&playsinline=1";
-    document.getElementById('videoUrlText').textContent = VIDEO_URL;
-
-    // 內部狀態
-    let stream, running = false, hit = false;
-    let cvReady = false, targetMat, targetKeypoints, targetDescriptors;
-    let detector, matcher;
-
-    const statusEl = document.getElementById('status');
-    const cam = document.getElementById('cam');
-    const frame = document.getElementById('frame');
-    const startBtn = document.getElementById('startBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const yt = document.getElementById('yt');
-
-    function setStatus(html){ statusEl.innerHTML = html; }
-    function safeStop(){
-      running = false;
-      if(stream){ stream.getTracks().forEach(t=>t.stop()); }
-      startBtn.disabled = false; stopBtn.disabled = true;
-      setStatus('<span class="pill">⏹️ 已停止</span>');
-    }
-
-    async function startCam(){
-      if(!cvReady){ setStatus('<span class="pill warn">📦 正在載入影像模組…</span>'); return; }
-      try{
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio:false });
-        cam.srcObject = stream; await cam.play();
-        const w = cam.videoWidth, h = cam.videoHeight;
-        frame.width = Math.floor(w/2); frame.height = Math.floor(h/2); // 降解析度加速
-        running = true; startBtn.disabled = true; stopBtn.disabled = false;
-        setStatus('<span class="pill">📸 相機啟動中…請對準目標圖片</span>');
-        loop();
-      }catch(err){
-        console.error(err);
-        setStatus('<span class="pill err">🚫 無法啟動相機：'+ err.message +'</span>');
-      }
-    }
-
-    function computeGoodMatches(desc1, desc2){
-      const matches = new cv.DMatchVector();
-      const matchesVec = new cv.DMatchVectorVector();
-      // KNN = 2，做 ratio test
-      matcher.knnMatch(desc1, desc2, matchesVec, 2);
-      let good = 0;
-      for(let i=0; i<matchesVec.size(); i++){
-        const m = matchesVec.get(i);
-        if(m.size() >= 2){
-          const a = m.get(0), b = m.get(1);
-          if(a.distance < 0.75 * b.distance) good++;
-        }
-        m.delete();
-      }
-      matches.delete(); matchesVec.delete();
-      return good;
-    }
-
-    function detectOnce(srcMat){
-      const gray = new cv.Mat();
-      cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
-      const kps = new cv.KeyPointVector();
-      const des = new cv.Mat();
-      detector.detectAndCompute(gray, new cv.Mat(), kps, des);
-      const good = computeGoodMatches(des, targetDescriptors);
-      gray.delete(); kps.delete(); des.delete();
-      return good;
-    }
-
-    function loop(){
-      if(!running) return;
-      const ctx = frame.getContext('2d');
-      ctx.drawImage(cam, 0, 0, frame.width, frame.height);
-      const src = cv.imread(frame);
-      const good = detectOnce(src);
-      src.delete();
-
-      const THRESHOLD = 18; // 可依目標圖複雜度調整
-      if(good >= THRESHOLD && !hit){
-        hit = true;
-        setStatus('<span class="pill ok">✅ 命中！匹配點：'+good+'，已顯示影片</span>');
-        yt.src = VIDEO_URL;
-      } else if(!hit) {
-        setStatus('<span class="pill">🔍 比對中…良好匹配：'+good+'</span>');
-      }
-      // 降低頻率以省電：每 200ms 檢測一次
-      setTimeout(()=>requestAnimationFrame(loop), 200);
-    }
-
-    function onOpenCvReady(){
-      cv['onRuntimeInitialized'] = () => {
-        // 準備 ORB 與 BFMatcher
-        detector = new cv.ORB();
-        matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
-        // 載入目標圖片
-        const img = new Image();
-        img.src = 'target.jpg';
-        img.onload = () => {
-          const c = document.createElement('canvas');
-          c.width = img.width; c.height = img.height;
-          c.getContext('2d').drawImage(img, 0, 0);
-          const mat = cv.imread(c);
-          const gray = new cv.Mat();
-          cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
-          targetKeypoints = new cv.KeyPointVector();
-          targetDescriptors = new cv.Mat();
-          detector.detectAndCompute(gray, new cv.Mat(), targetKeypoints, targetDescriptors);
-          mat.delete(); gray.delete();
-          targetMat = true;
-          cvReady = true;
-          setStatus('<span class="pill ok">🧩 影像模組就緒，已載入目標特徵。可按「啟動相機」。</span>');
-        };
-        img.onerror = () => setStatus('<span class="pill err">⚠️ 找不到 target.jpg，請把目標圖片放在同資料夾。</span>');
-      };
-    }
-
-    // 事件
-    startBtn.addEventListener('click', startCam);
-    stopBtn.addEventListener('click', safeStop);
-    document.getElementById('upload').addEventListener('change', async (e)=>{
-      const file = e.target.files[0]; if(!file) return;
-      const img = new Image(); img.src = URL.createObjectURL(file);
-      await img.decode();
-      const c = document.createElement('canvas');
-      const MAXW = 720; const scale = Math.min(1, MAXW / img.width);
-      c.width = img.width * scale; c.height = img.height * scale;
-      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-      const mat = cv.imread(c);
-      const good = detectOnce(mat);
-      mat.delete();
-      if(good >= 18 && !hit){
-        hit = true; yt.src = VIDEO_URL;
-        setStatus('<span class="pill ok">✅ 上傳圖片命中，匹配點：'+good+'；已顯示影片</span>');
-      } else {
-        setStatus('<span class="pill">🔍 上傳圖片比對良好匹配：'+good+'（門檻 18）</span>');
-      }
-    });
-
-    // 自動暫停頁面離開時的相機
-    document.addEventListener('visibilitychange', ()=>{ if(document.hidden) safeStop(); });
-  </script>
+  
+  <!-- 
+    修正：底下重複的 <script> 區塊已被刪除，
+    它導致了 'startCam' 和 'onOpenCvReady' 函數被錯誤地覆蓋。
+  -->
 </body>
 </html>
