@@ -3,41 +3,109 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>掃描圖片→播放影片 (OpenCV.js 多目標版)</title>
+  <title>臺灣感性－臺灣特色人物動起來</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans TC, Arial, sans-serif; margin: 0; background:#0b0f14; color:#e6edf3; }
-    header { padding: 16px 20px; background: #111827; position: sticky; top:0; z-index: 10; }
-    h1 { font-size: 18px; margin: 0; }
+    /* === 全新介面修改：臺灣感性－活潑橘色風格 === */
+    body { 
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans TC, Arial, sans-serif; 
+      margin: 0; 
+      background: rgb(255, 237, 204); /* 淡米黃色背景 */
+      color: #333; /* 深色文字 */
+    }
+    header { 
+      padding: 16px 20px; 
+      background: rgb(255, 105, 0); /* 鮮豔橘色 */
+      color: #fff; /* 白色標題文字 */
+      position: sticky; 
+      top:0; 
+      z-index: 10; 
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 { font-size: 20px; margin: 0; }
     main { padding: 16px; display: grid; gap: 16px; }
-    .card { background: #111827; border: 1px solid #1f2937; border-radius: 14px; padding: 16px; }
+    .card { 
+      background: #fff; /* 卡片背景白色 */
+      border: 1px solid rgb(255, 171, 105); /* 橘色邊框 */
+      border-radius: 14px; 
+      padding: 16px; 
+      box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+    }
     .row { display: grid; grid-template-columns: 1fr; gap: 16px; }
     @media (min-width: 900px){ .row { grid-template-columns: 1.2fr 1fr; } }
-    /* 修正：移除鏡像翻轉 */
     video#cam { 
       width: 100%; 
       max-height: 60vh; 
       background: #000; 
       border-radius: 12px; 
-      /* transform: scaleX(-1);  <- 已移除 */
     }
     canvas { display:none; }
-    .status { font-size: 14px; opacity: 0.8; }
-    .pill { display:inline-flex; align-items:center; gap:8px; border:1px solid #374151; background:#0b1220; padding:8px 12px; border-radius:999px; }
-    .ok { color:#10b981; }
-    .warn { color:#f59e0b; }
-    .err { color:#ef4444; }
+    
+    /* 2. 狀態訊息移到右下角，並縮小字體 */
+    .status {
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      font-size: 12px; /* 從 14px 縮小 */
+      opacity: 0.9;
+      z-index: 20; /* 確保在最上層 */
+    }
+    
+    .pill { 
+      display:inline-flex; 
+      align-items:center; 
+      gap:8px; 
+      border:1px solid rgb(255, 171, 105); /* 橘色邊框 */
+      background: rgb(255, 218, 179); /* 淡橘色背景 */
+      color: #555; /* 深色文字 */
+      padding:8px 12px; 
+      border-radius:999px; 
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* 增加一點陰影 */
+    }
+    .ok { color: #28a745; } /* 綠色 */
+    .warn { color: #ffc107; } /* 黃色 */
+    .err { color: #dc3545; } /* 紅色 */
+    
     .actions { display:flex; flex-wrap: wrap; gap:8px; }
-    button, input[type="file"]::file-selector-button { background:#1f2937; color:#e6edf3; border:1px solid #374151; padding:10px 12px; border-radius:10px; cursor:pointer; }
-    button:hover, input[type="file"]::file-selector-button:hover { background:#243040; }
-    .player { aspect-ratio: 16/9; width: 100%; background:#000; border-radius: 12px; overflow: hidden; border:1px solid #1f2937; }
-    .help { font-size: 13px; line-height: 1.5; opacity: .9; }
-    a { color:#86c5ff; }
-    .badge { font-size:12px; padding:4px 8px; background:#0b1220; border:1px solid #22314d; border-radius:999px; }
+    button { 
+      background: rgb(255, 105, 0); /* 鮮豔橘色按鈕 */
+      color: #fff; /* 白色按鈕文字 */
+      border:1px solid rgb(200, 80, 0); /* 深橘色邊框 */
+      padding:10px 12px; 
+      border-radius:10px; 
+      cursor:pointer; 
+      font-weight: bold;
+    }
+    button:hover { background: rgb(200, 80, 0); } /* 按鈕hover變深 */
+    .player { aspect-ratio: 16/9; width: 100%; background:#000; border-radius: 12px; overflow: hidden; border:1px solid rgb(255, 171, 105); }
+    .help { font-size: 13px; line-height: 1.5; opacity: .9; color: #555; }
+    a { color:#007bff; }
+    .badge { 
+      font-size:12px; 
+      padding:4px 8px; 
+      background: rgb(255, 218, 179); /* 淡橘色背景 */
+      border:1px solid rgb(255, 171, 105); /* 橘色邊框 */
+      border-radius:999px; 
+      color: #555;
+    }
+    
+    /* 1. 提示語樣式 (粗體, 無邊框) */
+    .instruction-text {
+      font-weight: bold;
+      text-align: center;
+      margin-top: 12px;
+      color: #333;
+    }
+    
+    /* 4. 配對成功文字樣式 (粉紅, 粗體) */
+    .success-message {
+      color: #E5357A; /* 粉紅色 */
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <header>
-    <h1>掃描指定圖片 → 自動顯示影片（多目標版）</h1>
+    <h1>臺灣感性－臺灣特色人物動起來</h1>
   </header>
   <main>
     <section class="card row">
@@ -45,59 +113,53 @@
         <div class="actions" style="margin-bottom:12px">
           <button id="startBtn">啟動相機</button>
           <button id="stopBtn" disabled>停止</button>
-          <span class="badge">多目標模式：請對準任一目標圖片</span>
+          <!-- 1. 提示語已移到 video 下方 -->
         </div>
         <video id="cam" playsinline muted></video>
+        
+        <!-- 1. 提示語移到這裡，並修改樣式 -->
+        <p class="instruction-text">對準任一人物照片，下面可以看到人物動起來哦</p>
+        
         <canvas id="frame"></canvas>
-        <p class="status" id="status">
-          <span class="pill warn">🔎 正在等待相機啟動…</span>
-        </p>
-        <div class="help">
-          <p>把相機對準「目標圖片」（見下方清單）。當系統判定相符，即會顯示下方影片。</p>
-          <details>
-            <summary>或改用上傳照片比對</summary>
-            <input type="file" id="upload" accept="image/*" />
-          </details>
-        </div>
+        
+        <!-- 3. 提示文字已移除 -->
       </div>
       <div>
         <div class="player" id="player">
           <iframe id="yt" width="100%" height="100%" style="border:0" allow="autoplay; encrypted-media; picture-in-picture"
-            src="about:blank" title="目標影片"></iframe>
+            src="about:blank" title="人物動起來影片"></iframe>
         </div>
         <div class="help">
-          <p>✅ 命中後會載入該目標對應的影片。<br>
-          目前命中：<code id="currentLabel">尚未命中</code><br>
-          影片連結：<code id="videoUrlText">(等待命中)</code></p>
+          <!-- 4. 修改配對成功文字 & 樣式 -->
+          <p class="success-message">✅配對成功，就會看到「可愛的臺灣人物」動起來哦！<br>
+          目前配對：<code id="currentLabel">尚未配對</code><br>
+          台灣人物動起來：<code id="videoUrlText">(等待配對)</code></p>
           <details open>
-            <summary>已載入目標清單</summary>
+            <summary>已載入相片清單</summary>
             <ul id="targetsList"></ul>
           </details>
         </div>
-        <!-- 移除了舊版 "如何換成自己的內容？" 的說明，因為已在此處實現多目標 -->
       </div>
     </section>
 
-    <section class="card">
-      <h3>原理說明（簡化版）</h3>
-      <p class="help">使用 OpenCV.js 的 ORB 特徵與暴力匹配（Hamming），在每幀擷取的影像上與離線預先載入的目標圖片做特徵比對；當良好匹配數超過門檻，就判定為「命中」，觸發顯示影片。此法精簡、可離線、免雲端，但比 QR code 更吃光線與影像品質，建議目標圖案具有足夠紋理與對比。</p>
-    </section>
+    <!-- 2. 狀態訊息移到 main 的結尾 (會被 CSS 定位到右下角) -->
+    <p class="status" id="status">
+      <span class="pill warn">🔎 正在等待相機啟動…</span>
+    </p>
   </main>
 
-  <!-- OpenCV.js CDN（需可連網）-->
-  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
+  <!-- OpenCV.js CDN（需可連網）--><script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
   
-  <!-- 這是唯一且正確的 Script 區塊 -->
   <script>
-    // === 多目標設定（請改這裡）===
+    // === 多相片設定（請改這裡）===
     // image 為檔名（需與 index.html 一起上傳到 GitHub）
     // url 必須是 "embed" 格式的影片網址
     const TARGETS = [
-      { id:'t1', image:'70299.jpg', label:'目標 A', url:'https://www.youtube.com/embed/kJrUlfrioGk?autoplay=1&mute=1&playsinline=1', threshold:18 },
-      { id:'t2', image:'70202.jpg', label:'目標 B', url:'https://www.youtube.com/embed/VhvUABwtinE?autoplay=1&mute=1&playsinline=1', threshold:18 },
-      { id:'t3', image:'70204.jpg', label:'目標 C', url:'https://www.youtube.com/embed/1AorgPxuoAQ?autoplay=1&mute=1&playsinline=1', threshold:18 }, // <-- 修正：加上了逗號
-      { id:'t4', image:'70211.jpg', label:'目標 D', url:'https://www.youtube.com/embed/-U_GWXq5zks?autoplay=1&mute=1&playsinline=1', threshold:18 }
-      // 可繼續新增：{ id:'t5', image:'poster_E.jpg', label:'目標 E', url:'https:...', threshold:20 }
+      { id:'t1', image:'70299.jpg', label:'相片 A', url:'https://www.youtube.com/embed/kJrUlfrioGk?autoplay=1&mute=1&playsinline=1', threshold:18 },
+      { id:'t2', image:'70202.jpg', label:'相片 B', url:'https://www.youtube.com/embed/VhvUABwtinE?autoplay=1&mute=1&playsinline=1', threshold:18 },
+      { id:'t3', image:'70204.jpg', label:'相片 C', url:'https://www.youtube.com/embed/1AorgPxuoAQ?autoplay=1&mute=1&playsinline=1', threshold:18 }, 
+      { id:'t4', image:'70211.jpg', label:'相片 D', url:'https://www.youtube.com/embed/-U_GWXq5zks?autoplay=1&mute=1&playsinline=1', threshold:18 }
+      // 可繼續新增：{ id:'t5', image:'poster_E.jpg', label:'相片 E', url:'https...', threshold:20 }
     ];
 
     // 內部狀態
@@ -125,19 +187,16 @@
     }
 
     async function startCam(){
-      // 修正：檢查 loadedTargets.length 是否 > 0
       if(!cvReady || loadedTargets.length === 0){ 
-        setStatus('<span class="pill warn">📦 影像模組尚未就緒或目標尚未載入…</span>'); 
-        // 增加提示，檢查 Console
+        setStatus('<span class="pill warn">📦 影像模組尚未就緒或相片尚未載入…</span>'); 
         if (!cvReady) console.warn('OpenCV.js 尚未就緒');
-        if (loadedTargets.length === 0) console.warn('沒有成功載入任何目標圖片');
+        if (loadedTargets.length === 0) console.warn('沒有成功載入任何相片');
         return; 
       }
       try{
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio:false });
         cam.srcObject = stream; await cam.play();
         
-        // 降低解析度以提升效能
         const videoTrack = stream.getVideoTracks()[0];
         const settings = videoTrack.getSettings();
         const w = settings.width || 640;
@@ -147,7 +206,7 @@
         frame.height = Math.floor(h/2);
 
         running = true; startBtn.disabled = true; stopBtn.disabled = false;
-        setStatus('<span class="pill">📸 相機啟動中…請對準任一目標圖片</span>');
+        setStatus('<span class="pill">📸 相機啟動中…請對準任一相片</span>');
         loop();
       }catch(err){
         console.error(err);
@@ -168,7 +227,6 @@
     function computeGoodMatches(descScene, descTarget){
       const matchesVec = new cv.DMatchVectorVector();
       try {
-        // 修正：檢查 desc 是否為空
         if (descScene.empty() || descTarget.empty()) {
             matchesVec.delete();
             return 0;
@@ -177,7 +235,7 @@
       } catch(e) {
         console.warn("knnMatch error", e);
         matchesVec.delete();
-        return 0; // 比對失敗
+        return 0; 
       }
       
       let good = 0;
@@ -208,21 +266,12 @@
     function loop(){
       if(!running) return;
       const ctx = frame.getContext('2d');
-      // 繪製影像到 canvas (移除鏡像翻轉)
-      /*
-      ctx.save();
-      ctx.scale(-1, 1);
-      ctx.drawImage(cam, -frame.width, 0, frame.width, frame.height);
-      ctx.restore();
-      */
-      // 修正：使用原始、非鏡像的畫面
       ctx.drawImage(cam, 0, 0, frame.width, frame.height);
       
       const scene = cv.imread(frame);
       const sceneDesc = extractDesc(scene);
       scene.delete();
 
-      // 對每個目標做比對，取最佳
       let best = {id:null, label:'', url:'', threshold:999, score:-1};
       for(const t of loadedTargets){
         const good = computeGoodMatches(sceneDesc, t.desc);
@@ -237,9 +286,9 @@
             yt.src = best.url;
             currentLabelEl.textContent = `${best.label}（匹配：${best.score}）`;
             videoUrlText.textContent = best.url;
-            setStatus('<span class="pill ok">✅ 命中：'+best.label+'；匹配點：'+best.score+'</span>');
+            setStatus('<span class="pill ok">✅ 配對：'+best.label+'；匹配點：'+best.score+'</span>');
           } else {
-            setStatus('<span class="pill ok">✅ 維持命中：'+best.label+'（匹配：'+best.score+'）</span>');
+            setStatus('<span class="pill ok">✅ 維持配對：'+best.label+'（匹配：'+best.score+'）</span>');
           }
         } else {
           currentHitId = null; // 匹配數不足，重置
@@ -257,12 +306,11 @@
       if(!targetsList) return;
       targetsList.innerHTML = '';
       if(loadedTargets.length === 0) {
-        targetsList.innerHTML = '<li>尚未載入任何目標。</li>';
+        targetsList.innerHTML = '<li>尚未載入任何相片。</li>';
         return;
       }
       for(const t of loadedTargets){
         const li = document.createElement('li');
-        // 修正：顯示 label
         li.innerHTML = `<code>${t.label}</code> → <code>...${t.url.split('?')[0].slice(-20)}</code>（門檻 ${t.threshold}）`;
         targetsList.appendChild(li);
       }
@@ -279,10 +327,8 @@
           return;
         }
 
-        // 載入所有目標並計算特徵
         const loads = TARGETS.map(cfg => new Promise((resolve, reject) => {
           const img = new Image();
-          // img.crossOrigin = "Anonymous"; // 註：在 GitHub Pages 上因為同源，通常不需要
           img.src = cfg.image;
           
           img.onload = () => {
@@ -301,8 +347,7 @@
             }
           };
           img.onerror = () => {
-            // 這是最常見的錯誤！
-            console.error(`找不到圖片：'${cfg.image}'。請檢查 GitHub 上的檔名大小寫是否完全一致。`);
+            console.error(`找不到相片：'${cfg.image}'。請檢查 GitHub 上的檔名大小寫是否完全一致。`);
             reject(new Error(`找不到 ${cfg.image}`));
           };
         }));
@@ -311,11 +356,11 @@
           await Promise.all(loads);
           cvReady = true;
           renderTargetsList();
-          setStatus('<span class="pill ok">🧩 已載入 '+loadedTargets.length+' 個目標特徵，隨時可「啟動相機」。</span>');
+          setStatus('<span class="pill ok">🧩 已載入 '+loadedTargets.length+' 個相片特徵，隨時可「啟動相機」。</span>');
         }catch(e){
           console.error(e);
-          setStatus(`<span class="pill err">⚠️ 有目標圖片載入失敗：${e.message}。請檢查檔名。</span>`);
-          renderTargetsList(); // 顯示部分載入的
+          setStatus(`<span class="pill err">⚠️ 有相片載入失敗：${e.message}。請檢查檔名。</span>`);
+          renderTargetsList(); 
         }
       };
     }
@@ -323,48 +368,6 @@
     // 事件
     startBtn.addEventListener('click', startCam);
     stopBtn.addEventListener('click', safeStop);
-
-    // 上傳靜態圖片比對
-    const uploadEl = document.getElementById('upload');
-    if(uploadEl){
-      uploadEl.addEventListener('change', async (e)=>{
-        if(!cvReady || loadedTargets.length === 0){
-           setStatus('<span class="pill warn">📦 目標尚未載入，請稍候。</span>');
-           e.target.value = null; // 重設
-           return;
-        }
-        const file = e.target.files[0]; if(!file) return;
-        const img = new Image(); img.src = URL.createObjectURL(file); 
-        await img.decode();
-        
-        const c = document.createElement('canvas');
-        const MAXW = 720; const scale = Math.min(1, MAXW / img.width);
-        c.width = img.width * scale; c.height = img.height * scale;
-        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
-        
-        const mat = cv.imread(c);
-        const sceneDesc = extractDesc(mat); mat.delete();
-        
-        let best = {id:null, label:'', url:'', threshold:999, score:-1};
-        for(const t of loadedTargets){
-          const good = computeGoodMatches(sceneDesc, t.desc);
-          if(good > best.score){ best = {id:t.id, label:t.label, url:t.url, threshold:t.threshold, score:good}; }
-        }
-        sceneDesc.delete();
-        
-        if(best.id && best.score >= best.threshold){
-          currentHitId = best.id; yt.src = best.url;
-          currentLabelEl.textContent = `${best.label}（匹配：${best.score}）`;
-          videoUrlText.textContent = best.url;
-          setStatus('<span class="pill ok">✅ 上傳圖片命中：'+best.label+'；匹配：'+best.score+'</span>');
-        } else if(best.id){
-          setStatus('<span class="pill">🔍 上傳圖片最佳：'+best.label+'（良好匹配：'+best.score+' / 門檻 '+best.threshold+'）</span>');
-        } else {
-          setStatus('<span class="pill">🔍 上傳圖片比對無結果</span>');
-        }
-        e.target.value = null; // 重設
-      });
-    }
 
     document.addEventListener('visibilitychange', ()=>{ if(document.hidden) safeStop(); });
   </script>
