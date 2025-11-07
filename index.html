@@ -12,13 +12,13 @@
     .card { background: #111827; border: 1px solid #1f2937; border-radius: 14px; padding: 16px; }
     .row { display: grid; grid-template-columns: 1fr; gap: 16px; }
     @media (min-width: 900px){ .row { grid-template-columns: 1.2fr 1fr; } }
-    /* 修正：讓攝影機畫面鏡像翻轉，更符合直覺 */
+    /* 修正：移除鏡像翻轉 */
     video#cam { 
       width: 100%; 
       max-height: 60vh; 
       background: #000; 
       border-radius: 12px; 
-      transform: scaleX(-1); 
+      /* transform: scaleX(-1);  <- 已移除 */
     }
     canvas { display:none; }
     .status { font-size: 14px; opacity: 0.8; }
@@ -208,11 +208,15 @@
     function loop(){
       if(!running) return;
       const ctx = frame.getContext('2d');
-      // 繪製影像到 canvas (鏡像翻轉，以匹配攝影機畫面)
+      // 繪製影像到 canvas (移除鏡像翻轉)
+      /*
       ctx.save();
       ctx.scale(-1, 1);
       ctx.drawImage(cam, -frame.width, 0, frame.width, frame.height);
       ctx.restore();
+      */
+      // 修正：使用原始、非鏡像的畫面
+      ctx.drawImage(cam, 0, 0, frame.width, frame.height);
       
       const scene = cv.imread(frame);
       const sceneDesc = extractDesc(scene);
@@ -365,9 +369,5 @@
     document.addEventListener('visibilitychange', ()=>{ if(document.hidden) safeStop(); });
   </script>
   
-  <!-- 
-    修正：底下重複的 <script> 區塊已被刪除，
-    它導致了 'startCam' 和 'onOpenCvReady' 函數被錯誤地覆蓋。
-  -->
 </body>
 </html>
