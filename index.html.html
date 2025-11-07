@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>掃描圖片→播放影片 Demo (OpenCV.js)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans TC, Arial, sans-serif; margin: 0; background:#0b0f14; color:#e6edf3; }
+    header { padding: 16px 20px; background: #111827; position: sticky; top:0; z-index: 10; }
+    h1 { font-size: 18px; margin: 0; }
+    main { padding: 16px; display: grid; gap: 16px; }
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 14px; padding: 16px; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    @media (min-width: 900px){ .row { grid-template-columns: 1.2fr 1fr; } }
+    video#cam { width: 100%; max-height: 60vh; background: #000; border-radius: 12px; }
+    canvas { display:none; }
+    .status { font-size: 14px; opacity: 0.8; }
+    .pill { display:inline-flex; align-items:center; gap:8px; border:1px solid #374151; background:#0b1220; padding:8px 12px; border-radius:999px; }
+    .ok { color:#10b981; }
+    .warn { color:#f59e0b; }
+    .err { color:#ef4444; }
+    .actions { display:flex; flex-wrap: wrap; gap:8px; }
+    button, input[type="file"]::file-selector-button { background:#1f2937; color:#e6edf3; border:1px solid #374151; padding:10px 12px; border-radius:10px; cursor:pointer; }
+    button:hover, input[type="file"]::file-selector-button:hover { background:#243040; }
+    .player { aspect-ratio: 16/9; width: 100%; background:#000; border-radius: 12px; overflow: hidden; border:1px solid #1f2937; }
+    .help { font-size: 13px; line-height: 1.5; opacity: .9; }
+    a { color:#86c5ff; }
+    .badge { font-size:12px; padding:4px 8px; background:#0b1220; border:1px solid #22314d; border-radius:999px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>掃描指定圖片 → 自動顯示影片（Web 版，免 App）</h1>
+  </header>
+  <main>
+    <section class="card row">
+      <div>
+        <div class="actions" style="margin-bottom:12px">
+          <button id="startBtn">啟動相機</button>
+          <button id="stopBtn" disabled>停止</button>
+          <span class="badge">多目標模式：請對準任一目標圖片</span>
+        </div>
+        <video id="cam" playsinline muted></video>
+        <canvas id="frame"></canvas>
+        <p class="status" id="status">
+          <span class="pill warn">🔎 正在等待相機啟動…</span>
+        </p>
+        <div class="help">
+          <p>把相機對準「目標圖片」（多目標（見下方清單））。當系統判定相符，即會顯示下方影片。</p>
+          <details>
+            <summary>或改用上傳照片比對</summary>
+            <input type="file" id="upload" accept="image/*" />
+          </details>
+        </div>
+      </div>
+      <div>
+        <div class="player" id="player">
+          <iframe id="yt" width="100%" height="100%" style="border:0" allow="autoplay; encrypted-media; picture-in-picture"
+            src="about:blank" title="目標影片"></iframe>
+        </div>
+        <div class="help">
+          <p>✅ 命中後會載入該目標對應的影片。<br>
+          目前命中：<code id="currentLabel">尚未命中</code><br>
+          影片連結：<code id="videoUrlText">(等待命中)</code></p>
+          <details open>
+            <summary>已載入目標清單</summary>
+            <ul id="targetsList"></ul>
+          </details>
+        </div>
+        <div class="help">
+          <strong>如何換成自己的內容？</strong>
+          <ol>
+            <li>把你的「目標圖片」命名為 <code>target.jpg</code>，與本檔案放在同一資料夾。</li>
+            <li>把 <code>VIDEO_URL</code> 改成你的 YouTube/Vimeo/自架 MP4 播放頁。</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>原理說明（簡化版）</h3>
+      <p class="help">使用 OpenCV.js 的 ORB 特徵與暴力匹配（Hamming），在每幀擷取的影像上與離線預先載入的目標圖片做特徵比對；當良好匹配數超過門檻，就判定為「命中」，觸發顯示影片。此法精簡、可離線、免雲端，但比 QR code 更吃光線與影像品質，建議目標圖案具有足夠紋理與對比。</p>
+    </section>
+  </main>
+
+  <!-- OpenCV.js CDN（需可連網）-->
+  <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
+  <script>
+    // === 多目標設定（請改這裡）===
+    // 每個目標一筆：image 為檔名（與本檔同資料夾），label 為顯示名稱，url 為對應影片頁，threshold 可依圖像複雜度調整（建議 14~28）。
+    const TARGETS = [
+      { id:'t1', image:'70299.jpg', label:'目標 A', url:'https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=1&playsinline=1', threshold:18 },
+      { id:'t2', image:'target2.jpg', label:'目標 B', url:'https://player.vimeo.com/video/76979871?autoplay=1&muted=1', threshold:18 }
+      // 可繼續新增：{ id:'t3', image:'poster_C.jpg', label:'目標 C', url:'https://你的影片頁', threshold:20 }
+    ];
+
+    // 內部狀態
+    let stream, running = false; let currentHitId = null; let cvReady = false;
+    let detector, matcher;
+    const loadedTargets = []; // {id,label,url,threshold,desc:Mat}
+
+    // DOM
+    const statusEl = document.getElementById('status');
+    const cam = document.getElementById('cam');
+    const frame = document.getElementById('frame');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const yt = document.getElementById('yt');
+    const currentLabelEl = document.getElementById('currentLabel');
+    const videoUrlText = document.getElementById('videoUrlText');
+    const targetsList = document.getElementById('targetsList');
+
+    function setStatus(html){ statusEl.innerHTML = html; }
+    function safeStop(){
+      running = false;
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+      startBtn.disabled = false; stopBtn.disabled = true;
+      setStatus('<span class="pill">⏹️ 已停止</span>');
+    }
+
+    async function startCam(){
+      if(!cvReady){ setStatus('<span class="pill warn">📦 影像模組尚未就緒或目標尚未載入…</span>'); return; }
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio:false });
+        cam.srcObject = stream; await cam.play();
+        frame.width = Math.floor(cam.videoWidth/2); frame.height = Math.floor(cam.videoHeight/2);
+        running = true; startBtn.disabled = true; stopBtn.disabled = false;
+        setStatus('<span class="pill">📸 相機啟動中…請對準任一目標圖片</span>');
+        loop();
+      }catch(err){
+        console.error(err);
+        setStatus('<span class="pill err">🚫 無法啟動相機：'+ err.message +'</span>');
+      }
+    }
+
+    function computeGoodMatches(descScene, descTarget){
+      const matchesVec = new cv.DMatchVectorVector();
+      matcher.knnMatch(descScene, descTarget, matchesVec, 2);
+      let good = 0;
+      for(let i=0;i<matchesVec.size();i++){
+        const m = matchesVec.get(i);
+        if(m.size() >= 2){
+          const a = m.get(0), b = m.get(1);
+          if(a.distance < 0.75*b.distance) good++;
+        }
+        m.delete();
+      }
+      matchesVec.delete();
+      return good;
+    }
+
+    function extractDesc(srcMat){
+      const gray = new cv.Mat(); cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
+      const kps = new cv.KeyPointVector(); const des = new cv.Mat();
+      detector.detectAndCompute(gray, new cv.Mat(), kps, des);
+      gray.delete(); kps.delete();
+      return des; // caller must delete
+    }
+
+    function loop(){
+      if(!running) return;
+      const ctx = frame.getContext('2d');
+      ctx.drawImage(cam, 0, 0, frame.width, frame.height);
+      const scene = cv.imread(frame);
+      const sceneDesc = extractDesc(scene);
+      scene.delete();
+
+      // 對每個目標做比對，取最佳
+      let best = {id:null, label:'', url:'', threshold:999, score:-1};
+      for(const t of loadedTargets){
+        const good = computeGoodMatches(sceneDesc, t.desc);
+        if(good > best.score){ best = {id:t.id, label:t.label, url:t.url, threshold:t.threshold, score:good}; }
+      }
+      sceneDesc.delete();
+
+      if(best.id){
+        if(best.score >= best.threshold){
+          if(currentHitId !== best.id){
+            currentHitId = best.id;
+            yt.src = best.url;
+            currentLabelEl.textContent = `${best.label}（匹配：${best.score}）`;
+            videoUrlText.textContent = best.url;
+            setStatus('<span class="pill ok">✅ 命中：'+best.label+'；匹配點：'+best.score+'</span>');
+          } else {
+            setStatus('<span class="pill ok">✅ 維持命中：'+best.label+'（匹配：'+best.score+'）</span>');
+          }
+        } else {
+          setStatus('<span class="pill">🔍 比對中…最佳：'+best.label+'（良好匹配：'+best.score+' / 門檻 '+best.threshold+'）</span>');
+        }
+      } else {
+        setStatus('<span class="pill">🔍 比對中…尚無結果</span>');
+      }
+
+      setTimeout(()=>requestAnimationFrame(loop), 220);
+    }
+
+    function renderTargetsList(){
+      if(!targetsList) return;
+      targetsList.innerHTML = '';
+      for(const t of loadedTargets){
+        const li = document.createElement('li');
+        li.innerHTML = `<code>${t.label}</code> → <code>${t.url}</code>（門檻 ${t.threshold}）`;
+        targetsList.appendChild(li);
+      }
+    }
+
+    function onOpenCvReady(){
+      cv['onRuntimeInitialized'] = async () => {
+        detector = new cv.ORB();
+        matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+
+        // 載入所有目標並計算特徵
+        const loads = TARGETS.map(cfg => new Promise((resolve, reject) => {
+          const img = new Image(); img.src = cfg.image;
+          img.onload = () => {
+            const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+            c.getContext('2d').drawImage(img,0,0);
+            const mat = cv.imread(c);
+            const desc = extractDesc(mat); mat.delete();
+            loadedTargets.push({ id:cfg.id, label:cfg.label, url:cfg.url, threshold:cfg.threshold ?? 18, desc });
+            resolve();
+          };
+          img.onerror = () => reject(new Error('找不到 '+cfg.image));
+        }));
+
+        try{
+          await Promise.all(loads);
+          cvReady = true;
+          renderTargetsList();
+          setStatus('<span class="pill ok">🧩 已載入 '+loadedTargets.length+' 個目標特徵，隨時可「啟動相機」。</span>');
+        }catch(e){
+          console.error(e);
+          setStatus('<span class="pill err">⚠️ 有目標圖片載入失敗：'+e.message+'</span>');
+        }
+      };
+    }
+
+    // 事件
+    startBtn.addEventListener('click', startCam);
+    stopBtn.addEventListener('click', safeStop);
+
+    // 上傳靜態圖片比對
+    const uploadEl = document.getElementById('upload');
+    if(uploadEl){
+      uploadEl.addEventListener('change', async (e)=>{
+        const file = e.target.files[0]; if(!file) return;
+        const img = new Image(); img.src = URL.createObjectURL(file); await img.decode();
+        const c = document.createElement('canvas');
+        const MAXW = 720; const scale = Math.min(1, MAXW / img.width);
+        c.width = img.width * scale; c.height = img.height * scale;
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        const mat = cv.imread(c);
+        const sceneDesc = extractDesc(mat); mat.delete();
+        let best = {id:null, label:'', url:'', threshold:999, score:-1};
+        for(const t of loadedTargets){
+          const good = computeGoodMatches(sceneDesc, t.desc);
+          if(good > best.score){ best = {id:t.id, label:t.label, url:t.url, threshold:t.threshold, score:good}; }
+        }
+        sceneDesc.delete();
+        if(best.id && best.score >= best.threshold){
+          currentHitId = best.id; yt.src = best.url;
+          currentLabelEl.textContent = `${best.label}（匹配：${best.score}）`;
+          videoUrlText.textContent = best.url;
+          setStatus('<span class="pill ok">✅ 上傳圖片命中：'+best.label+'；匹配：'+best.score+'</span>');
+        } else if(best.id){
+          setStatus('<span class="pill">🔍 上傳圖片最佳：'+best.label+'（良好匹配：'+best.score+' / 門檻 '+best.threshold+'）</span>');
+        } else {
+          setStatus('<span class="pill">🔍 上傳圖片比對無結果</span>');
+        }
+      });
+    }
+
+    document.addEventListener('visibilitychange', ()=>{ if(document.hidden) safeStop(); });
+  </script>
+  <script>
+    // === 可自訂 ===
+    const VIDEO_URL = "https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&mute=1&playsinline=1";
+    document.getElementById('videoUrlText').textContent = VIDEO_URL;
+
+    // 內部狀態
+    let stream, running = false, hit = false;
+    let cvReady = false, targetMat, targetKeypoints, targetDescriptors;
+    let detector, matcher;
+
+    const statusEl = document.getElementById('status');
+    const cam = document.getElementById('cam');
+    const frame = document.getElementById('frame');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const yt = document.getElementById('yt');
+
+    function setStatus(html){ statusEl.innerHTML = html; }
+    function safeStop(){
+      running = false;
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); }
+      startBtn.disabled = false; stopBtn.disabled = true;
+      setStatus('<span class="pill">⏹️ 已停止</span>');
+    }
+
+    async function startCam(){
+      if(!cvReady){ setStatus('<span class="pill warn">📦 正在載入影像模組…</span>'); return; }
+      try{
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio:false });
+        cam.srcObject = stream; await cam.play();
+        const w = cam.videoWidth, h = cam.videoHeight;
+        frame.width = Math.floor(w/2); frame.height = Math.floor(h/2); // 降解析度加速
+        running = true; startBtn.disabled = true; stopBtn.disabled = false;
+        setStatus('<span class="pill">📸 相機啟動中…請對準目標圖片</span>');
+        loop();
+      }catch(err){
+        console.error(err);
+        setStatus('<span class="pill err">🚫 無法啟動相機：'+ err.message +'</span>');
+      }
+    }
+
+    function computeGoodMatches(desc1, desc2){
+      const matches = new cv.DMatchVector();
+      const matchesVec = new cv.DMatchVectorVector();
+      // KNN = 2，做 ratio test
+      matcher.knnMatch(desc1, desc2, matchesVec, 2);
+      let good = 0;
+      for(let i=0; i<matchesVec.size(); i++){
+        const m = matchesVec.get(i);
+        if(m.size() >= 2){
+          const a = m.get(0), b = m.get(1);
+          if(a.distance < 0.75 * b.distance) good++;
+        }
+        m.delete();
+      }
+      matches.delete(); matchesVec.delete();
+      return good;
+    }
+
+    function detectOnce(srcMat){
+      const gray = new cv.Mat();
+      cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
+      const kps = new cv.KeyPointVector();
+      const des = new cv.Mat();
+      detector.detectAndCompute(gray, new cv.Mat(), kps, des);
+      const good = computeGoodMatches(des, targetDescriptors);
+      gray.delete(); kps.delete(); des.delete();
+      return good;
+    }
+
+    function loop(){
+      if(!running) return;
+      const ctx = frame.getContext('2d');
+      ctx.drawImage(cam, 0, 0, frame.width, frame.height);
+      const src = cv.imread(frame);
+      const good = detectOnce(src);
+      src.delete();
+
+      const THRESHOLD = 18; // 可依目標圖複雜度調整
+      if(good >= THRESHOLD && !hit){
+        hit = true;
+        setStatus('<span class="pill ok">✅ 命中！匹配點：'+good+'，已顯示影片</span>');
+        yt.src = VIDEO_URL;
+      } else if(!hit) {
+        setStatus('<span class="pill">🔍 比對中…良好匹配：'+good+'</span>');
+      }
+      // 降低頻率以省電：每 200ms 檢測一次
+      setTimeout(()=>requestAnimationFrame(loop), 200);
+    }
+
+    function onOpenCvReady(){
+      cv['onRuntimeInitialized'] = () => {
+        // 準備 ORB 與 BFMatcher
+        detector = new cv.ORB();
+        matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+        // 載入目標圖片
+        const img = new Image();
+        img.src = 'target.jpg';
+        img.onload = () => {
+          const c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          c.getContext('2d').drawImage(img, 0, 0);
+          const mat = cv.imread(c);
+          const gray = new cv.Mat();
+          cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+          targetKeypoints = new cv.KeyPointVector();
+          targetDescriptors = new cv.Mat();
+          detector.detectAndCompute(gray, new cv.Mat(), targetKeypoints, targetDescriptors);
+          mat.delete(); gray.delete();
+          targetMat = true;
+          cvReady = true;
+          setStatus('<span class="pill ok">🧩 影像模組就緒，已載入目標特徵。可按「啟動相機」。</span>');
+        };
+        img.onerror = () => setStatus('<span class="pill err">⚠️ 找不到 target.jpg，請把目標圖片放在同資料夾。</span>');
+      };
+    }
+
+    // 事件
+    startBtn.addEventListener('click', startCam);
+    stopBtn.addEventListener('click', safeStop);
+    document.getElementById('upload').addEventListener('change', async (e)=>{
+      const file = e.target.files[0]; if(!file) return;
+      const img = new Image(); img.src = URL.createObjectURL(file);
+      await img.decode();
+      const c = document.createElement('canvas');
+      const MAXW = 720; const scale = Math.min(1, MAXW / img.width);
+      c.width = img.width * scale; c.height = img.height * scale;
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      const mat = cv.imread(c);
+      const good = detectOnce(mat);
+      mat.delete();
+      if(good >= 18 && !hit){
+        hit = true; yt.src = VIDEO_URL;
+        setStatus('<span class="pill ok">✅ 上傳圖片命中，匹配點：'+good+'；已顯示影片</span>');
+      } else {
+        setStatus('<span class="pill">🔍 上傳圖片比對良好匹配：'+good+'（門檻 18）</span>');
+      }
+    });
+
+    // 自動暫停頁面離開時的相機
+    document.addEventListener('visibilitychange', ()=>{ if(document.hidden) safeStop(); });
+  </script>
+</body>
+</html>
